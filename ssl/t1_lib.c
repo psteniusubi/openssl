@@ -2314,7 +2314,7 @@ static int ssl_scan_clienthello_tlsext(SSL *s, PACKET *pkt, int *al)
          * callback and record the extension number so that an appropriate
          * ServerHello may be later returned.
          */
-        else if (!s->hit) {
+        else {
             if (custom_ext_parse(s, 1, type, PACKET_data(&extension),
                                  PACKET_remaining(&extension), al) <= 0)
                 return 0;
