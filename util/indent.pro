@@ -636,3 +636,8 @@
 -T ossl_intmax_t
 -T ossl_uintmax_t
 -T ossl_uintmax_t
+-T CT_POLICY_EVAL_CTX
+-T RAND_DRBG
+-T RAND_DRBG_CTR
+-T RAND_POOL
+-T RAND_METHOD

@@ -95,11 +95,13 @@ int ERR_load_ASN1_strings(void);
 # define ASN1_F_D2I_AUTOPRIVATEKEY                        207
 # define ASN1_F_D2I_PRIVATEKEY                            154
 # define ASN1_F_D2I_PUBLICKEY                             155
+# define ASN1_F_DO_BUF                                    142
 # define ASN1_F_DO_CREATE                                 124
 # define ASN1_F_DO_DUMP                                   125
 # define ASN1_F_DO_TCREATE                                222
 # define ASN1_F_I2A_ASN1_OBJECT                           126
 # define ASN1_F_I2D_ASN1_BIO_STREAM                       211
+# define ASN1_F_I2D_ASN1_OBJECT                           143
 # define ASN1_F_I2D_DSA_PUBKEY                            161
 # define ASN1_F_I2D_EC_PUBKEY                             181
 # define ASN1_F_I2D_PRIVATEKEY                            163
@@ -240,6 +242,7 @@ int ERR_load_ASN1_strings(void);
 # define ASN1_R_UNKNOWN_SIGNATURE_ALGORITHM               199
 # define ASN1_R_UNKNOWN_TAG                               194
 # define ASN1_R_UNSUPPORTED_ANY_DEFINED_BY_TYPE           164
+# define ASN1_R_UNSUPPORTED_CIPHER                        228
 # define ASN1_R_UNSUPPORTED_PUBLIC_KEY_TYPE               167
 # define ASN1_R_UNSUPPORTED_TYPE                          196
 # define ASN1_R_WRONG_INTEGER_TYPE                        225

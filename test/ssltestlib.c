@@ -12,6 +12,34 @@
 #include "internal/nelem.h"
 #include "ssltestlib.h"
 #include "testutil.h"
+#include "e_os.h"
+
+#ifdef OPENSSL_SYS_UNIX
+# include <unistd.h>
+
+static ossl_inline void ossl_sleep(unsigned int millis) {
+    usleep(millis * 1000);
+}
+#elif defined(_WIN32)
+# include <windows.h>
+
+static ossl_inline void ossl_sleep(unsigned int millis) {
+    Sleep(millis);
+}
+#else
+/* Fallback to a busy wait */
+static ossl_inline void ossl_sleep(unsigned int millis) {
+    struct timeval start, now;
+    unsigned int elapsedms;
+
+    gettimeofday(&start, NULL);
+    do {
+        gettimeofday(&now, NULL);
+        elapsedms = (((now.tv_sec - start.tv_sec) * 1000000)
+                     + now.tv_usec - start.tv_usec) / 1000;
+    } while (elapsedms < millis);
+}
+#endif
 
 static int tls_dump_new(BIO *bi);
 static int tls_dump_free(BIO *a);
@@ -252,7 +280,11 @@ typedef struct mempacket_test_ctx_st {
     unsigned int currrec;
     unsigned int currpkt;
     unsigned int lastpkt;
+    unsigned int injected;
     unsigned int noinject;
+    unsigned int dropepoch;
+    int droprec;
+    int duprec;
 } MEMPACKET_TEST_CTX;
 
 static int mempacket_test_new(BIO *bi);
@@ -295,6 +327,8 @@ static int mempacket_test_new(BIO *bio)
         OPENSSL_free(ctx);
         return 0;
     }
+    ctx->dropepoch = 0;
+    ctx->droprec = -1;
     BIO_set_init(bio, 1);
     BIO_set_data(bio, ctx);
     return 1;
@@ -312,8 +346,8 @@ static int mempacket_test_free(BIO *bio)
 }
 
 /* Record Header values */
-#define EPOCH_HI        4
-#define EPOCH_LO        5
+#define EPOCH_HI        3
+#define EPOCH_LO        4
 #define RECORD_SEQUENCE 10
 #define RECORD_LEN_HI   11
 #define RECORD_LEN_LO   12
@@ -341,15 +375,15 @@ static int mempacket_test_read(BIO *bio, char *out, int outl)
     if (outl > thispkt->len)
         outl = thispkt->len;
 
-    if (thispkt->type != INJECT_PACKET_IGNORE_REC_SEQ) {
+    if (thispkt->type != INJECT_PACKET_IGNORE_REC_SEQ
+            && (ctx->injected || ctx->droprec >= 0)) {
         /*
          * Overwrite the record sequence number. We strictly number them in
          * the order received. Since we are actually a reliable transport
          * we know that there won't be any re-ordering. We overwrite to deal
          * with any packets that have been injected
          */
-        for (rem = thispkt->len, rec = thispkt->data
-                ; rem > 0; rec += len, rem -= len) {
+        for (rem = thispkt->len, rec = thispkt->data; rem > 0; rem -= len) {
             if (rem < DTLS1_RT_HEADER_LENGTH)
                 return -1;
             epoch = (rec[EPOCH_HI] << 8) | rec[EPOCH_LO];
@@ -364,10 +398,23 @@ static int mempacket_test_read(BIO *bio, char *out, int outl)
                 seq >>= 8;
                 offset++;
             } while (seq > 0);
-            ctx->currrec++;
 
             len = ((rec[RECORD_LEN_HI] << 8) | rec[RECORD_LEN_LO])
                   + DTLS1_RT_HEADER_LENGTH;
+            if (rem < (int)len)
+                return -1;
+            if (ctx->droprec == (int)ctx->currrec && ctx->dropepoch == epoch) {
+                if (rem > (int)len)
+                    memmove(rec, rec + len, rem - len);
+                outl -= len;
+                ctx->droprec = -1;
+                if (outl == 0)
+                    BIO_set_retry_read(bio);
+            } else {
+                rec += len;
+            }
+
+            ctx->currrec++;
         }
     }
 
@@ -380,39 +427,64 @@ int mempacket_test_inject(BIO *bio, const char *in, int inl, int pktnum,
                           int type)
 {
     MEMPACKET_TEST_CTX *ctx = BIO_get_data(bio);
-    MEMPACKET *thispkt, *looppkt, *nextpkt;
-    int i;
+    MEMPACKET *thispkt = NULL, *looppkt, *nextpkt, *allpkts[3];
+    int i, duprec = ctx->duprec > 0;
+    const unsigned char *inu = (const unsigned char *)in;
+    size_t len = ((inu[RECORD_LEN_HI] << 8) | inu[RECORD_LEN_LO])
+                 + DTLS1_RT_HEADER_LENGTH;
 
     if (ctx == NULL)
+        return -1;
+
+    if ((size_t)inl < len)
+        return -1;
+
+    if ((size_t)inl == len)
+        duprec = 0;
+
+    /* We don't support arbitrary injection when duplicating records */
+    if (duprec && pktnum != -1)
         return -1;
 
     /* We only allow injection before we've started writing any data */
     if (pktnum >= 0) {
         if (ctx->noinject)
             return -1;
+        ctx->injected  = 1;
     } else {
         ctx->noinject = 1;
     }
 
-    if (!TEST_ptr(thispkt = OPENSSL_malloc(sizeof(*thispkt))))
-        return -1;
-    if (!TEST_ptr(thispkt->data = OPENSSL_malloc(inl))) {
-        mempacket_free(thispkt);
-        return -1;
-    }
+    for (i = 0; i < (duprec ? 3 : 1); i++) {
+        if (!TEST_ptr(allpkts[i] = OPENSSL_malloc(sizeof(*thispkt))))
+            goto err;
+        thispkt = allpkts[i];
 
-    memcpy(thispkt->data, in, inl);
-    thispkt->len = inl;
-    thispkt->num = (pktnum >= 0) ? (unsigned int)pktnum : ctx->lastpkt;
-    thispkt->type = type;
+        if (!TEST_ptr(thispkt->data = OPENSSL_malloc(inl)))
+            goto err;
+        /*
+         * If we are duplicating the packet, we duplicate it three times. The
+         * first two times we drop the first record if there are more than one.
+         * In this way we know that libssl will not be able to make progress
+         * until it receives the last packet, and hence will be forced to
+         * buffer these records.
+         */
+        if (duprec && i != 2) {
+            memcpy(thispkt->data, in + len, inl - len);
+            thispkt->len = inl - len;
+        } else {
+            memcpy(thispkt->data, in, inl);
+            thispkt->len = inl;
+        }
+        thispkt->num = (pktnum >= 0) ? (unsigned int)pktnum : ctx->lastpkt + i;
+        thispkt->type = type;
+    }
 
     for(i = 0; (looppkt = sk_MEMPACKET_value(ctx->pkts, i)) != NULL; i++) {
         /* Check if we found the right place to insert this packet */
         if (looppkt->num > thispkt->num) {
-            if (sk_MEMPACKET_insert(ctx->pkts, thispkt, i) == 0) {
-                mempacket_free(thispkt);
-                return -1;
-            }
+            if (sk_MEMPACKET_insert(ctx->pkts, thispkt, i) == 0)
+                goto err;
             /* If we're doing up front injection then we're done */
             if (pktnum >= 0)
                 return inl;
@@ -433,7 +505,7 @@ int mempacket_test_inject(BIO *bio, const char *in, int inl, int pktnum,
         } else if (looppkt->num == thispkt->num) {
             if (!ctx->noinject) {
                 /* We injected two packets with the same packet number! */
-                return -1;
+                goto err;
             }
             ctx->lastpkt++;
             thispkt->num++;
@@ -443,15 +515,21 @@ int mempacket_test_inject(BIO *bio, const char *in, int inl, int pktnum,
      * We didn't find any packets with a packet number equal to or greater than
      * this one, so we just add it onto the end
      */
-    if (!sk_MEMPACKET_push(ctx->pkts, thispkt)) {
-        mempacket_free(thispkt);
-        return -1;
+    for (i = 0; i < (duprec ? 3 : 1); i++) {
+        thispkt = allpkts[i];
+        if (!sk_MEMPACKET_push(ctx->pkts, thispkt))
+            goto err;
+
+        if (pktnum < 0)
+            ctx->lastpkt++;
     }
 
-    if (pktnum < 0)
-        ctx->lastpkt++;
-
     return inl;
+
+ err:
+    for (i = 0; i < (ctx->duprec > 0 ? 3 : 1); i++)
+        mempacket_free(allpkts[i]);
+    return -1;
 }
 
 static int mempacket_test_write(BIO *bio, const char *in, int inl)
@@ -487,6 +565,18 @@ static long mempacket_test_ctrl(BIO *bio, int cmd, long num, void *ptr)
         break;
     case BIO_CTRL_FLUSH:
         ret = 1;
+        break;
+    case MEMPACKET_CTRL_SET_DROP_EPOCH:
+        ctx->dropepoch = (unsigned int)num;
+        break;
+    case MEMPACKET_CTRL_SET_DROP_REC:
+        ctx->droprec = (int)num;
+        break;
+    case MEMPACKET_CTRL_GET_DROP_REC:
+        ret = ctx->droprec;
+        break;
+    case MEMPACKET_CTRL_SET_DUPLICATE_REC:
+        ctx->duprec = (int)num;
         break;
     case BIO_CTRL_RESET:
     case BIO_CTRL_DUP:
@@ -531,19 +621,22 @@ int create_ssl_ctx_pair(const SSL_METHOD *sm, const SSL_METHOD *cm,
         goto err;
     if (clientctx != NULL
         && ((min_proto_version > 0
-             && !TEST_true(SSL_CTX_set_min_proto_version(serverctx,
+             && !TEST_true(SSL_CTX_set_min_proto_version(clientctx,
                                                          min_proto_version)))
             || (max_proto_version > 0
-                && !TEST_true(SSL_CTX_set_max_proto_version(serverctx,
+                && !TEST_true(SSL_CTX_set_max_proto_version(clientctx,
                                                             max_proto_version)))))
         goto err;
 
-    if (!TEST_int_eq(SSL_CTX_use_certificate_file(serverctx, certfile,
-                                                  SSL_FILETYPE_PEM), 1)
-            || !TEST_int_eq(SSL_CTX_use_PrivateKey_file(serverctx, privkeyfile,
-                                                        SSL_FILETYPE_PEM), 1)
-            || !TEST_int_eq(SSL_CTX_check_private_key(serverctx), 1))
-        goto err;
+    if (certfile != NULL && privkeyfile != NULL) {
+        if (!TEST_int_eq(SSL_CTX_use_certificate_file(serverctx, certfile,
+                                                      SSL_FILETYPE_PEM), 1)
+                || !TEST_int_eq(SSL_CTX_use_PrivateKey_file(serverctx,
+                                                            privkeyfile,
+                                                            SSL_FILETYPE_PEM), 1)
+                || !TEST_int_eq(SSL_CTX_check_private_key(serverctx), 1))
+            goto err;
+    }
 
 #ifndef OPENSSL_NO_DH
     SSL_CTX_set_dh_auto(serverctx, 1);
@@ -621,12 +714,15 @@ int create_ssl_objects(SSL_CTX *serverctx, SSL_CTX *clientctx, SSL **sssl,
     return 0;
 }
 
-int create_ssl_connection(SSL *serverssl, SSL *clientssl, int want)
+/*
+ * Create an SSL connection, but does not ready any post-handshake
+ * NewSessionTicket messages.
+ */
+int create_bare_ssl_connection(SSL *serverssl, SSL *clientssl, int want)
 {
     int retc = -1, rets = -1, err, abortctr = 0;
     int clienterr = 0, servererr = 0;
-    unsigned char buf;
-    size_t readbytes;
+    int isdtls = SSL_is_dtls(serverssl);
 
     do {
         err = SSL_ERROR_WANT_WRITE;
@@ -650,7 +746,9 @@ int create_ssl_connection(SSL *serverssl, SSL *clientssl, int want)
                 err = SSL_get_error(serverssl, rets);
         }
 
-        if (!servererr && rets <= 0 && err != SSL_ERROR_WANT_READ) {
+        if (!servererr && rets <= 0
+                && err != SSL_ERROR_WANT_READ
+                && err != SSL_ERROR_WANT_X509_LOOKUP) {
             TEST_info("SSL_accept() failed %d, %d", rets, err);
             servererr = 1;
         }
@@ -658,22 +756,55 @@ int create_ssl_connection(SSL *serverssl, SSL *clientssl, int want)
             return 0;
         if (clienterr && servererr)
             return 0;
+        if (isdtls) {
+            if (rets > 0 && retc <= 0)
+                DTLSv1_handle_timeout(serverssl);
+            if (retc > 0 && rets <= 0)
+                DTLSv1_handle_timeout(clientssl);
+        }
         if (++abortctr == MAXLOOPS) {
             TEST_info("No progress made");
             return 0;
         }
+        if (isdtls && abortctr <= 50 && (abortctr % 10) == 0) {
+            /*
+             * It looks like we're just spinning. Pause for a short period to
+             * give the DTLS timer a chance to do something. We only do this for
+             * the first few times to prevent hangs.
+             */
+            ossl_sleep(50);
+        }
     } while (retc <=0 || rets <= 0);
+
+    return 1;
+}
+
+/*
+ * Create an SSL connection including any post handshake NewSessionTicket
+ * messages.
+ */
+int create_ssl_connection(SSL *serverssl, SSL *clientssl, int want)
+{
+    int i;
+    unsigned char buf;
+    size_t readbytes;
+
+    if (!create_bare_ssl_connection(serverssl, clientssl, want))
+        return 0;
 
     /*
      * We attempt to read some data on the client side which we expect to fail.
      * This will ensure we have received the NewSessionTicket in TLSv1.3 where
-     * appropriate.
+     * appropriate. We do this twice because there are 2 NewSesionTickets.
      */
-    if (SSL_read_ex(clientssl, &buf, sizeof(buf), &readbytes) > 0) {
-        if (!TEST_ulong_eq(readbytes, 0))
+    for (i = 0; i < 2; i++) {
+        if (SSL_read_ex(clientssl, &buf, sizeof(buf), &readbytes) > 0) {
+            if (!TEST_ulong_eq(readbytes, 0))
+                return 0;
+        } else if (!TEST_int_eq(SSL_get_error(clientssl, 0),
+                                SSL_ERROR_WANT_READ)) {
             return 0;
-    } else if (!TEST_int_eq(SSL_get_error(clientssl, 0), SSL_ERROR_WANT_READ)) {
-        return 0;
+        }
     }
 
     return 1;

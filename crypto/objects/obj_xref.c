@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2017 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -46,10 +46,9 @@ int OBJ_find_sigid_algs(int signid, int *pdig_nid, int *ppkey_nid)
     const nid_triple *rv = NULL;
     tmp.sign_id = signid;
 
-    if (sig_app) {
+    if (sig_app != NULL) {
         int idx = sk_nid_triple_find(sig_app, &tmp);
-        if (idx >= 0)
-            rv = sk_nid_triple_value(sig_app, idx);
+        rv = sk_nid_triple_value(sig_app, idx);
     }
 #ifndef OBJ_XREF_TEST2
     if (rv == NULL) {

@@ -15,18 +15,8 @@
 #include <openssl/ssl.h>
 #include "testutil.h"
 #include "internal/nelem.h"
-
-#ifdef __VMS
-# pragma names save
-# pragma names as_is,shortened
-#endif
-
 #include "../ssl/ssl_locl.h"
 #include "../ssl/ssl_cert_table.h"
-
-#ifdef __VMS
-# pragma names restore
-#endif
 
 #define test_cert_table(nid, amask, idx) \
     do_test_cert_table(nid, amask, idx, #idx)
@@ -76,7 +66,7 @@ static int test_ssl_cert_table(void)
     return 1;
 }
 
-int setup_tests()
+int setup_tests(void)
 {
     ADD_TEST(test_ssl_cert_table);
     return 1;

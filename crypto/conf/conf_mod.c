@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2017 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2002-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -480,11 +480,8 @@ char *CONF_get1_default_config_file(void)
     char *file, *sep = "";
     int len;
 
-    if (!OPENSSL_issetugid()) {
-        file = getenv("OPENSSL_CONF");
-        if (file)
-            return OPENSSL_strdup(file);
-    }
+    if ((file = ossl_safe_getenv("OPENSSL_CONF")) != NULL)
+        return OPENSSL_strdup(file);
 
     len = strlen(X509_get_default_cert_area());
 #ifndef OPENSSL_SYS_VMS

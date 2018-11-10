@@ -37,8 +37,7 @@ Typical examples for such special use cases are the following:
 
 =item *
 
-You want to use your own private DRBG instances, similar to how it
-is currently done in the ssl library.
+You want to use your own private DRBG instances.
 Multiple DRBG instances which are accessed only by a single thread provide
 additional security (because their internal states are independent) and
 better scalability in multithreaded applications (because they don't need
@@ -80,8 +79,8 @@ the thread-local <public> and <private> DRBG instance, respectively.
 =head2 The <master> DRBG instance
 
 The <master> DRBG is not used directly by the application, only for reseeding
-the two other two  DRBG instances. It reseeds itself by obtaining randomness
-either from os entropy  sources or by consuming randomness which was added
+the two other two DRBG instances. It reseeds itself by obtaining randomness
+either from os entropy sources or by consuming randomness which was added
 previously by L<RAND_add(3)>.
 
 =head2 The <public> DRBG instance
@@ -144,10 +143,12 @@ together and are being used.
     +------------------+      +------------------------------------+
 
 
-
-The method L<RAND_DRBG_bytes(3)> is a convenience method wrapping the
-L<RAND_DRBG_generate(3)> function, which serves the actual request for
-random data.
+The usual way to obtain random bytes is to call RAND_bytes(...) or
+RAND_priv_bytes(...). These calls are roughly equivalent to calling
+RAND_DRBG_bytes(<public>, ...) and RAND_DRBG_bytes(<private>, ...),
+respectively. The method L<RAND_DRBG_bytes(3)> is a convenience method
+wrapping the L<RAND_DRBG_generate(3)> function, which serves the actual
+request for random data.
 
 =head1 RESEEDING
 
@@ -188,7 +189,7 @@ In addition to automatic reseeding, the caller can request an immediate
 reseeding of the DRBG with fresh entropy by setting the
 I<prediction resistance> parameter to 1 when calling L<RAND_DRBG_generate(3)>.
 
-The dcoument [NIST SP 800-90C] describes prediction resistance requests
+The document [NIST SP 800-90C] describes prediction resistance requests
 in detail and imposes strict conditions on the entropy sources that are
 approved for providing prediction resistance.
 Since the default DRBG implementation does not have access to such an approved
@@ -221,7 +222,7 @@ This is in fact done automatically by L<RAND_DRBG_bytes(3)>.
 
 In most cases OpenSSL will automatically choose a suitable seed source
 for automatically seeding and reseeding its <master> DRBG. In some cases
-however, it will be necessary to explicitely specify a seed source during
+however, it will be necessary to explicitly specify a seed source during
 configuration, using the --with-rand-seed option. For more information,
 see the INSTALL instructions. There are also operating systems where no
 seed source is available and automatic reseeding is disabled by default.

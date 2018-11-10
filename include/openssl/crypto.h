@@ -73,8 +73,6 @@ int CRYPTO_THREAD_unlock(CRYPTO_RWLOCK *lock);
 void CRYPTO_THREAD_lock_free(CRYPTO_RWLOCK *lock);
 
 int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock);
-int CRYPTO_atomic_read(int *val, int *ret, CRYPTO_RWLOCK *lock);
-int CRYPTO_atomic_write(int *val, int n, CRYPTO_RWLOCK *lock);
 
 /*
  * The following can be used to detect memory leaks in the library. If
@@ -376,9 +374,17 @@ int CRYPTO_memcmp(const void * in_a, const void * in_b, size_t len);
 # define OPENSSL_INIT_ENGINE_CAPI            0x00002000L
 # define OPENSSL_INIT_ENGINE_PADLOCK         0x00004000L
 # define OPENSSL_INIT_ENGINE_AFALG           0x00008000L
-# define OPENSSL_INIT_reserved_internal      0x00010000L
+/* OPENSSL_INIT_ZLIB                         0x00010000L */
 # define OPENSSL_INIT_ATFORK                 0x00020000L
-/* OPENSSL_INIT flag range 0xfff00000 reserved for OPENSSL_init_ssl() */
+/* OPENSSL_INIT_BASE_ONLY                    0x00040000L */
+/* FREE: 0x00080000L */
+/* OPENSSL_INIT flag range 0x03f00000 reserved for OPENSSL_init_ssl() */
+# define OPENSSL_INIT_NO_ADD_ALL_MACS        0x04000000L
+# define OPENSSL_INIT_ADD_ALL_MACS           0x08000000L
+/* FREE: 0x10000000L */
+/* FREE: 0x20000000L */
+/* FREE: 0x40000000L */
+/* FREE: 0x80000000L */
 /* Max OPENSSL_INIT flag value is 0x80000000 */
 
 /* openssl and dasync not counted as builtin */

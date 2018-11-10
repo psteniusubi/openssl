@@ -27,12 +27,17 @@
 # endif
 #endif
 
+#ifndef S_ISDIR
+# define S_ISDIR(a) (((a) & S_IFMT) == S_IFDIR)
+#endif
+
 /*
  * The maximum length we can grow a value to after variable expansion. 64k
  * should be more than enough for all reasonable uses.
  */
 #define MAX_CONF_VALUE_LENGTH       65536
 
+static int is_keytype(const CONF *conf, char c, unsigned short type);
 static char *eat_ws(CONF *conf, char *p);
 static void trim_ws(CONF *conf, char *start);
 static char *eat_alpha_numeric(CONF *conf, char *p);
@@ -84,12 +89,12 @@ static CONF_METHOD WIN32_method = {
     def_load
 };
 
-CONF_METHOD *NCONF_default()
+CONF_METHOD *NCONF_default(void)
 {
     return &default_method;
 }
 
-CONF_METHOD *NCONF_WIN32()
+CONF_METHOD *NCONF_WIN32(void)
 {
     return &WIN32_method;
 }
@@ -419,12 +424,26 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
     }
     BUF_MEM_free(buff);
     OPENSSL_free(section);
-    sk_BIO_pop_free(biosk, BIO_vfree);
+    /*
+     * No need to pop, since we only get here if the stack is empty.
+     * If this causes a BIO leak, THE ISSUE IS SOMEWHERE ELSE!
+     */
+    sk_BIO_free(biosk);
     return 1;
  err:
     BUF_MEM_free(buff);
     OPENSSL_free(section);
-    sk_BIO_pop_free(biosk, BIO_vfree);
+    /*
+     * Since |in| is the first element of the stack and should NOT be freed
+     * here, we cannot use sk_BIO_pop_free().  Instead, we pop and free one
+     * BIO at a time, making sure that the last one popped isn't.
+     */
+    while (sk_BIO_num(biosk) > 0) {
+        BIO *popped = sk_BIO_pop(biosk);
+        BIO_vfree(in);
+        in = popped;
+    }
+    sk_BIO_free(biosk);
 #ifndef OPENSSL_NO_POSIX_IO
     OPENSSL_free(dirpath);
     if (dirctx != NULL)
@@ -655,7 +674,7 @@ static BIO *process_include(char *include, OPENSSL_DIR_CTX **dirctx,
         return NULL;
     }
 
-    if ((st.st_mode & S_IFDIR) == S_IFDIR) {
+    if (S_ISDIR(st.st_mode)) {
         if (*dirctx != NULL) {
             CONFerr(CONF_F_PROCESS_INCLUDE,
                     CONF_R_RECURSIVE_DIRECTORY_INCLUDE);
@@ -731,6 +750,30 @@ static BIO *get_next_file(const char *path, OPENSSL_DIR_CTX **dirctx)
     return NULL;
 }
 #endif
+
+static int is_keytype(const CONF *conf, char c, unsigned short type)
+{
+    const unsigned short * keytypes = (const unsigned short *) conf->meth_data;
+    unsigned char key = (unsigned char)c;
+
+#ifdef CHARSET_EBCDIC
+# if CHAR_BIT > 8
+    if (key > 255) {
+        /* key is out of range for os_toascii table */
+        return 0;
+    }
+# endif
+    /* convert key from ebcdic to ascii */
+    key = os_toascii[key];
+#endif
+
+    if (key > 127) {
+        /* key is not a seven bit ascii character */
+        return 0;
+    }
+
+    return (keytypes[key] & type) ? 1 : 0;
+}
 
 static char *eat_ws(CONF *conf, char *p)
 {
