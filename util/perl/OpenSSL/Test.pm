@@ -1,6 +1,6 @@
-# Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2016-2019 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -14,7 +14,7 @@ use Test::More 0.96;
 
 use Exporter;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-$VERSION = "0.8";
+$VERSION = "1.0";
 @ISA = qw(Exporter);
 @EXPORT = (@Test::More::EXPORT, qw(setup run indir cmd app fuzz test
                                    perlapp perltest subtest));
@@ -22,7 +22,8 @@ $VERSION = "0.8";
                                          srctop_dir srctop_file
                                          data_file data_dir
                                          pipe with cmdstr quotify
-                                         openssl_versions));
+                                         openssl_versions
+                                         ok_nofips is_nofips isnt_nofips));
 
 =head1 NAME
 
@@ -810,11 +811,11 @@ sub quotify {
 
 =item B<openssl_versions>
 
-Returns a list of two numbers, the first representing the build version,
-the second representing the library version.  See opensslv.h for more
-information on those numbers.
+Returns a list of two version numbers, the first representing the build
+version, the second representing the library version.  See opensslv.h for
+more information on those numbers.
 
-= back
+=back
 
 =cut
 
@@ -823,13 +824,69 @@ sub openssl_versions {
     unless (@versions) {
         my %lines =
             map { s/\R$//;
-                  /^(.*): (0x[[:xdigit:]]{8})$/;
-                  die "Weird line: $_" unless defined $1;
-                  $1 => hex($2) }
+                  /^(.*): (.*)$/;
+                  $1 => $2 }
             run(test(['versions']), capture => 1);
         @versions = ( $lines{'Build version'}, $lines{'Library version'} );
     }
     return @versions;
+}
+
+=over 4
+
+=item B<ok_nofips EXPR, TEST_NAME>
+
+C<ok_nofips> is equivalent to using C<ok> when the environment variable
+C<FIPS_MODE> is undefined, otherwise it is equivalent to C<not ok>. This can be
+used for C<ok> tests that must fail when testing a FIPS provider. The parameters
+are the same as used by C<ok> which is an expression EXPR followed by the test
+description TEST_NAME.
+
+An example:
+
+  ok_nofips(run(app(["md5.pl"])), "md5 should fail in fips mode");
+
+=item B<is_nofips EXPR1, EXPR2, TEST_NAME>
+
+C<is_nofips> is equivalent to using C<is> when the environment variable
+C<FIPS_MODE> is undefined, otherwise it is equivalent to C<isnt>. This can be
+used for C<is> tests that must fail when testing a FIPS provider. The parameters
+are the same as used by C<is> which has 2 arguments EXPR1 and EXPR2 that can be
+compared using eq or ne, followed by a test description TEST_NAME.
+
+An example:
+
+  is_nofips(ultimate_answer(), 42,  "Meaning of Life");
+
+=item B<isnt_nofips EXPR1, EXPR2, TEST_NAME>
+
+C<isnt_nofips> is equivalent to using C<isnt> when the environment variable
+C<FIPS_MODE> is undefined, otherwise it is equivalent to C<is>. This can be
+used for C<isnt> tests that must fail when testing a FIPS provider. The
+parameters are the same as used by C<isnt> which has 2 arguments EXPR1 and EXPR2
+that can be compared using ne or eq, followed by a test description TEST_NAME.
+
+An example:
+
+  isnt_nofips($foo, '',  "Got some foo");
+
+=back
+
+=cut
+
+sub ok_nofips {
+    return ok(!$_[0], @_[1..$#_]) if defined $ENV{FIPS_MODE};
+    return ok($_[0], @_[1..$#_]);
+}
+
+sub is_nofips {
+    return isnt($_[0], $_[1], @_[2..$#_]) if defined $ENV{FIPS_MODE};
+    return is($_[0], $_[1], @_[2..$#_]);
+}
+
+sub isnt_nofips {
+    return is($_[0], $_[1], @_[2..$#_]) if defined $ENV{FIPS_MODE};
+    return isnt($_[0], $_[1], @_[2..$#_]);
 }
 
 ######################################################################
@@ -861,6 +918,12 @@ are located.  Defaults to C<$TOP/test> (adapted to the operating system).
 
 If defined, it puts testing in a different mode, where a recipe with
 failures will result in a C<BAIL_OUT> at the end of its run.
+
+=item B<FIPS_MODE>
+
+If defined it indicates that the FIPS provider is being tested. Tests may use
+B<ok_nofips>, B<is_nofips> and B<isnt_nofips> to invert test results
+i.e. Some tests may only work in non FIPS mode.
 
 =back
 

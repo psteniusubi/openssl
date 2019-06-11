@@ -1,7 +1,7 @@
 /*
  * Copyright 2009-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -38,7 +38,12 @@ unsigned int OPENSSL_ppccap_P = 0;
 
 static sigset_t all_masked;
 
-#ifdef OPENSSL_BN_ASM_MONT
+/*
+ * TODO(3.0): Temporarily disabled some assembler that hasn't been brought into
+ * the FIPS module yet.
+ */
+#ifndef FIPS_MODE
+# ifdef OPENSSL_BN_ASM_MONT
 int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
                 const BN_ULONG *np, const BN_ULONG *n0, int num)
 {
@@ -63,7 +68,7 @@ int bn_mul_mont(BN_ULONG *rp, const BN_ULONG *ap, const BN_ULONG *bp,
 
     return bn_mul_mont_int(rp, ap, bp, np, n0, num);
 }
-#endif
+# endif
 
 void sha256_block_p8(void *ctx, const void *inp, size_t len);
 void sha256_block_ppc(void *ctx, const void *inp, size_t len);
@@ -83,7 +88,7 @@ void sha512_block_data_order(void *ctx, const void *inp, size_t len)
         sha512_block_ppc(ctx, inp, len);
 }
 
-#ifndef OPENSSL_NO_CHACHA
+# ifndef OPENSSL_NO_CHACHA
 void ChaCha20_ctr32_int(unsigned char *out, const unsigned char *inp,
                         size_t len, const unsigned int key[8],
                         const unsigned int counter[4]);
@@ -103,9 +108,9 @@ void ChaCha20_ctr32(unsigned char *out, const unsigned char *inp,
             ? ChaCha20_ctr32_vmx(out, inp, len, key, counter)
             : ChaCha20_ctr32_int(out, inp, len, key, counter);
 }
-#endif
+# endif
 
-#ifndef OPENSSL_NO_POLY1305
+# ifndef OPENSSL_NO_POLY1305
 void poly1305_init_int(void *ctx, const unsigned char key[16]);
 void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len,
                          unsigned int padbit);
@@ -116,10 +121,19 @@ void poly1305_blocks_fpu(void *ctx, const unsigned char *inp, size_t len,
                          unsigned int padbit);
 void poly1305_emit_fpu(void *ctx, unsigned char mac[16],
                        const unsigned int nonce[4]);
+void poly1305_init_vsx(void *ctx, const unsigned char key[16]);
+void poly1305_blocks_vsx(void *ctx, const unsigned char *inp, size_t len,
+                         unsigned int padbit);
+void poly1305_emit_vsx(void *ctx, unsigned char mac[16],
+                       const unsigned int nonce[4]);
 int poly1305_init(void *ctx, const unsigned char key[16], void *func[2]);
 int poly1305_init(void *ctx, const unsigned char key[16], void *func[2])
 {
-    if (sizeof(size_t) == 4 && (OPENSSL_ppccap_P & PPC_FPU)) {
+    if (OPENSSL_ppccap_P & PPC_CRYPTO207) {
+        poly1305_init_int(ctx, key);
+        func[0] = (void*)(uintptr_t)poly1305_blocks_vsx;
+        func[1] = (void*)(uintptr_t)poly1305_emit;
+    } else if (sizeof(size_t) == 4 && (OPENSSL_ppccap_P & PPC_FPU)) {
         poly1305_init_fpu(ctx, key);
         func[0] = (void*)(uintptr_t)poly1305_blocks_fpu;
         func[1] = (void*)(uintptr_t)poly1305_emit_fpu;
@@ -130,9 +144,9 @@ int poly1305_init(void *ctx, const unsigned char key[16], void *func[2])
     }
     return 1;
 }
-#endif
+# endif
 
-#ifdef ECP_NISTZ256_ASM
+# ifdef ECP_NISTZ256_ASM
 void ecp_nistz256_mul_mont(unsigned long res[4], const unsigned long a[4],
                            const unsigned long b[4]);
 
@@ -154,7 +168,8 @@ void ecp_nistz256_from_mont(unsigned long res[4], const unsigned long in[4])
 
     ecp_nistz256_mul_mont(res, in, one);
 }
-#endif
+# endif
+#endif /* FIPS_MODE */
 
 static sigjmp_buf ill_jmp;
 static void ill_handler(int sig)
@@ -168,16 +183,50 @@ void OPENSSL_altivec_probe(void);
 void OPENSSL_crypto207_probe(void);
 void OPENSSL_madd300_probe(void);
 
-/*
- * Use a weak reference to getauxval() so we can use it if it is available
- * but don't break the build if it is not. Note that this is *link-time*
- * feature detection, not *run-time*. In other words if we link with
- * symbol present, it's expected to be present even at run-time.
- */
-#if defined(__GNUC__) && __GNUC__>=2 && defined(__ELF__)
-extern unsigned long getauxval(unsigned long type) __attribute__ ((weak));
-#else
-static unsigned long (*getauxval) (unsigned long) = NULL;
+long OPENSSL_rdtsc_mftb(void);
+long OPENSSL_rdtsc_mfspr268(void);
+
+uint32_t OPENSSL_rdtsc(void)
+{
+    if (OPENSSL_ppccap_P & PPC_MFTB)
+        return OPENSSL_rdtsc_mftb();
+    else if (OPENSSL_ppccap_P & PPC_MFSPR268)
+        return OPENSSL_rdtsc_mfspr268();
+    else
+        return 0;
+}
+
+size_t OPENSSL_instrument_bus_mftb(unsigned int *, size_t);
+size_t OPENSSL_instrument_bus_mfspr268(unsigned int *, size_t);
+
+size_t OPENSSL_instrument_bus(unsigned int *out, size_t cnt)
+{
+    if (OPENSSL_ppccap_P & PPC_MFTB)
+        return OPENSSL_instrument_bus_mftb(out, cnt);
+    else if (OPENSSL_ppccap_P & PPC_MFSPR268)
+        return OPENSSL_instrument_bus_mfspr268(out, cnt);
+    else
+        return 0;
+}
+
+size_t OPENSSL_instrument_bus2_mftb(unsigned int *, size_t, size_t);
+size_t OPENSSL_instrument_bus2_mfspr268(unsigned int *, size_t, size_t);
+
+size_t OPENSSL_instrument_bus2(unsigned int *out, size_t cnt, size_t max)
+{
+    if (OPENSSL_ppccap_P & PPC_MFTB)
+        return OPENSSL_instrument_bus2_mftb(out, cnt, max);
+    else if (OPENSSL_ppccap_P & PPC_MFSPR268)
+        return OPENSSL_instrument_bus2_mfspr268(out, cnt, max);
+    else
+        return 0;
+}
+
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
+# if __GLIBC_PREREQ(2, 16)
+#  include <sys/auxv.h>
+#  define OSSL_IMPLEMENT_GETAUXVAL
+# endif
 #endif
 
 /* I wish <sys/auxv.h> was universally available */
@@ -277,8 +326,10 @@ void OPENSSL_cpuid_setup(void)
     }
 #endif
 
-    if (getauxval != NULL) {
+#ifdef OSSL_IMPLEMENT_GETAUXVAL
+    {
         unsigned long hwcap = getauxval(HWCAP);
+        unsigned long hwcap2 = getauxval(HWCAP2);
 
         if (hwcap & HWCAP_FPU) {
             OPENSSL_ppccap_P |= PPC_FPU;
@@ -297,16 +348,15 @@ void OPENSSL_cpuid_setup(void)
         if (hwcap & HWCAP_ALTIVEC) {
             OPENSSL_ppccap_P |= PPC_ALTIVEC;
 
-            if ((hwcap & HWCAP_VSX) && (getauxval(HWCAP2) & HWCAP_VEC_CRYPTO))
+            if ((hwcap & HWCAP_VSX) && (hwcap2 & HWCAP_VEC_CRYPTO))
                 OPENSSL_ppccap_P |= PPC_CRYPTO207;
         }
 
-        if (hwcap & HWCAP_ARCH_3_00) {
+        if (hwcap2 & HWCAP_ARCH_3_00) {
             OPENSSL_ppccap_P |= PPC_MADD300;
         }
-
-        return;
     }
+#endif
 
     sigfillset(&all_masked);
     sigdelset(&all_masked, SIGILL);
@@ -325,15 +375,16 @@ void OPENSSL_cpuid_setup(void)
     sigprocmask(SIG_SETMASK, &ill_act.sa_mask, &oset);
     sigaction(SIGILL, &ill_act, &ill_oact);
 
+#ifndef OSSL_IMPLEMENT_GETAUXVAL
     if (sigsetjmp(ill_jmp,1) == 0) {
         OPENSSL_fpu_probe();
         OPENSSL_ppccap_P |= PPC_FPU;
 
         if (sizeof(size_t) == 4) {
-#ifdef __linux
+# ifdef __linux
             struct utsname uts;
             if (uname(&uts) == 0 && strcmp(uts.machine, "ppc64") == 0)
-#endif
+# endif
                 if (sigsetjmp(ill_jmp, 1) == 0) {
                     OPENSSL_ppc64_probe();
                     OPENSSL_ppccap_P |= PPC_FPU64;
@@ -357,6 +408,15 @@ void OPENSSL_cpuid_setup(void)
     if (sigsetjmp(ill_jmp, 1) == 0) {
         OPENSSL_madd300_probe();
         OPENSSL_ppccap_P |= PPC_MADD300;
+    }
+#endif
+
+    if (sigsetjmp(ill_jmp, 1) == 0) {
+        OPENSSL_rdtsc_mftb();
+        OPENSSL_ppccap_P |= PPC_MFTB;
+    } else if (sigsetjmp(ill_jmp, 1) == 0) {
+        OPENSSL_rdtsc_mfspr268();
+        OPENSSL_ppccap_P |= PPC_MFSPR268;
     }
 
     sigaction(SIGILL, &ill_oact, NULL);

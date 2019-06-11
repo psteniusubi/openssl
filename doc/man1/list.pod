@@ -18,6 +18,7 @@ B<openssl list>
 [B<-cipher-algorithms>]
 [B<-public-key-algorithms>]
 [B<-public-key-methods>]
+[B<-engines>]
 [B<-disabled>]
 
 =head1 DESCRIPTION
@@ -80,6 +81,10 @@ a block of multiple lines, all but the first are indented.
 Display a list of public key method OIDs: this also includes public key methods
 without an associated ASN.1 method, for example, KDF algorithms.
 
+=item B<-engines>
+
+Display a list of loaded engines.
+
 =item B<-disabled>
 
 Display a list of disabled features, those that were compiled out
@@ -94,9 +99,9 @@ format described in L<config(5)/ASN1 Object Configuration Module>.
 
 =head1 COPYRIGHT
 
-Copyright 2016-2017 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
 
-Licensed under the OpenSSL license (the "License").  You may not use
+Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy
 in the file LICENSE in the source distribution or at
 L<https://www.openssl.org/source/license.html>.

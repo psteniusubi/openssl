@@ -1,7 +1,7 @@
 /*
  * Copyright 2011-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -422,6 +422,11 @@ int drbg_ctr_init(RAND_DRBG *drbg)
         drbg->max_perslen = DRBG_MAX_LENGTH;
         drbg->max_adinlen = DRBG_MAX_LENGTH;
     } else {
+#ifdef FIPS_MODE
+        RANDerr(RAND_F_DRBG_CTR_INIT,
+                RAND_R_DERIVATION_FUNCTION_MANDATORY_FOR_FIPS);
+        return 0;
+#else
         drbg->min_entropylen = drbg->seedlen;
         drbg->max_entropylen = drbg->seedlen;
         /* Nonce not used */
@@ -429,6 +434,7 @@ int drbg_ctr_init(RAND_DRBG *drbg)
         drbg->max_noncelen = 0;
         drbg->max_perslen = drbg->seedlen;
         drbg->max_adinlen = drbg->seedlen;
+#endif
     }
 
     drbg->max_request = 1 << 16;

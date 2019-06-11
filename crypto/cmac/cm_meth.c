@@ -1,7 +1,7 @@
 /*
  * Copyright 2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -46,14 +46,22 @@ static void cmac_free(EVP_MAC_IMPL *cctx)
     }
 }
 
-static int cmac_copy(EVP_MAC_IMPL *cdst, EVP_MAC_IMPL *csrc)
+static EVP_MAC_IMPL *cmac_dup(const EVP_MAC_IMPL *csrc)
 {
-    if (!CMAC_CTX_copy(cdst->ctx, csrc->ctx))
-        return 0;
+    EVP_MAC_IMPL *cdst = cmac_new();
+
+    if (cdst == NULL)
+        return NULL;
+
+    if (!CMAC_CTX_copy(cdst->ctx, csrc->ctx)) {
+        cmac_free(cdst);
+        return NULL;
+    }
 
     cdst->tmpengine = csrc->tmpengine;
     cdst->tmpcipher = csrc->tmpcipher;
-    return 1;
+
+    return cdst;
 }
 
 static size_t cmac_size(EVP_MAC_IMPL *cctx)
@@ -153,7 +161,7 @@ static int cmac_ctrl_str(EVP_MAC_IMPL *cctx, const char *type,
 const EVP_MAC cmac_meth = {
     EVP_MAC_CMAC,
     cmac_new,
-    cmac_copy,
+    cmac_dup,
     cmac_free,
     cmac_size,
     cmac_init,

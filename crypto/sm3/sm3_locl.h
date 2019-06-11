@@ -3,7 +3,7 @@
  * Copyright 2017 Ribose Inc. All Rights Reserved.
  * Ported from Ribose contributions from Botan.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -34,6 +34,7 @@
       } while (0)
 #define HASH_BLOCK_DATA_ORDER   sm3_block_data_order
 
+void sm3_block_data_order(SM3_CTX *c, const void *p, size_t num);
 void sm3_transform(SM3_CTX *c, const unsigned char *data);
 
 #include "internal/md32_common.h"

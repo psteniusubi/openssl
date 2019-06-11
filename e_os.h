@@ -1,7 +1,7 @@
 /*
  * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -27,11 +27,7 @@
  * set this to a comma-separated list of 'random' device files to try out. By
  * default, we will try to read at least one of these files
  */
-#  if defined(__s390__)
-#   define DEVRANDOM "/dev/prandom","/dev/urandom","/dev/hwrng","/dev/random"
-#  else
-#   define DEVRANDOM "/dev/urandom","/dev/random","/dev/srandom"
-#  endif
+#  define DEVRANDOM "/dev/urandom", "/dev/random", "/dev/hwrng", "/dev/srandom"
 # endif
 # if !defined(OPENSSL_NO_EGD) && !defined(DEVRANDOM_EGD)
 /*
@@ -39,7 +35,7 @@
  * sockets will be tried in the order listed in case accessing the device
  * files listed in DEVRANDOM did not return enough randomness.
  */
-#  define DEVRANDOM_EGD "/var/run/egd-pool","/dev/egd-pool","/etc/egd-pool","/etc/entropy"
+#  define DEVRANDOM_EGD "/var/run/egd-pool", "/dev/egd-pool", "/etc/egd-pool", "/etc/entropy"
 # endif
 
 # if defined(OPENSSL_SYS_VXWORKS) || defined(OPENSSL_SYS_UEFI)
@@ -49,6 +45,7 @@
 
 # define get_last_sys_error()    errno
 # define clear_sys_error()       errno=0
+# define set_sys_error(e)        errno=(e)
 
 /********************************************************************
  The Microsoft section
@@ -66,8 +63,10 @@
 # ifdef WIN32
 #  undef get_last_sys_error
 #  undef clear_sys_error
+#  undef set_sys_error
 #  define get_last_sys_error()    GetLastError()
 #  define clear_sys_error()       SetLastError(0)
+#  define set_sys_error(e)        SetLastError(e)
 #  if !defined(WINNT)
 #   define WIN_CONSOLE_BUG
 #  endif
@@ -208,7 +207,7 @@ extern FILE *_imp___iob;
 # else                          /* The non-microsoft world */
 
 #  if defined(OPENSSL_SYS_VXWORKS)
-#   include <sys/times.h>
+#   include <time.h>
 #  else
 #   include <sys/time.h>
 #  endif

@@ -1,7 +1,7 @@
 /*
- * Copyright 2002-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2002-2019 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -10,12 +10,27 @@
 #include "ec_lcl.h"
 #include <openssl/err.h>
 
+int EC_GROUP_check_named_curve(const EC_GROUP *group, int nist_only)
+{
+    int nid;
+
+    nid = ec_curve_nid_from_params(group);
+    if (nid > 0 && nist_only && EC_curve_nid2nist(nid) == NULL)
+        nid = NID_undef;
+    return nid;
+}
+
 int EC_GROUP_check(const EC_GROUP *group, BN_CTX *ctx)
 {
     int ret = 0;
     const BIGNUM *order;
     BN_CTX *new_ctx = NULL;
     EC_POINT *point = NULL;
+
+    if (group == NULL || group->meth == NULL) {
+        ECerr(EC_F_EC_GROUP_CHECK, ERR_R_PASSED_NULL_PARAMETER);
+        return 0;
+    }
 
     /* Custom curves assumed to be correct */
     if ((group->meth->flags & EC_FLAGS_CUSTOM_CURVE) != 0)

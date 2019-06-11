@@ -1,7 +1,7 @@
 /*
  * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -175,7 +175,10 @@ int CRYPTO_atomic_add(int *val, int amount, int *ret, CRYPTO_RWLOCK *lock)
     return 1;
 }
 
-# ifdef OPENSSL_SYS_UNIX
+# ifndef FIPS_MODE
+/* TODO(3.0): No fork protection in FIPS module yet! */
+
+#  ifdef OPENSSL_SYS_UNIX
 static pthread_once_t fork_once_control = PTHREAD_ONCE_INIT;
 
 static void fork_once_func(void)
@@ -183,14 +186,15 @@ static void fork_once_func(void)
     pthread_atfork(OPENSSL_fork_prepare,
                    OPENSSL_fork_parent, OPENSSL_fork_child);
 }
-# endif
+#  endif
 
 int openssl_init_fork_handlers(void)
 {
-# ifdef OPENSSL_SYS_UNIX
+#  ifdef OPENSSL_SYS_UNIX
     if (pthread_once(&fork_once_control, fork_once_func) == 0)
         return 1;
-# endif
+#  endif
     return 0;
 }
+# endif /* FIPS_MODE */
 #endif

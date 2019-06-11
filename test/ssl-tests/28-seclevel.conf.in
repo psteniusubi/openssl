@@ -1,7 +1,7 @@
 # -*- mode: perl; -*-
-# Copyright 2016-2016 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -10,6 +10,7 @@
 ## SSL test configurations
 
 package ssltests;
+use OpenSSL::Test::Utils;
 
 our @tests = (
     {
@@ -18,20 +19,14 @@ our @tests = (
         client => { },
         test   => { "ExpectedResult" => "ServerFail" },
     },
+);
+
+our @tests_ec = (
     {
         name => "SECLEVEL 3 with ED448 key",
         server => { "CipherString" => "DEFAULT:\@SECLEVEL=3",
                     "Certificate" => test_pem("server-ed448-cert.pem"),
                     "PrivateKey" => test_pem("server-ed448-key.pem") },
-        client => { },
-        test   => { "ExpectedResult" => "Success" },
-    },
-    {
-        name => "SECLEVEL 3 with ED448 key, TLSv1.2",
-        server => { "CipherString" => "DEFAULT:\@SECLEVEL=3",
-                    "Certificate" => test_pem("server-ed448-cert.pem"),
-                    "PrivateKey" => test_pem("server-ed448-key.pem"),
-                    "MaxProtocol" => "TLSv1.2" },
         client => { },
         test   => { "ExpectedResult" => "Success" },
     },
@@ -46,3 +41,18 @@ our @tests = (
         test   => { "ExpectedResult" => "Success" },
     },
 );
+
+our @tests_tls1_2 = (
+    {
+        name => "SECLEVEL 3 with ED448 key, TLSv1.2",
+        server => { "CipherString" => "DEFAULT:\@SECLEVEL=3",
+                    "Certificate" => test_pem("server-ed448-cert.pem"),
+                    "PrivateKey" => test_pem("server-ed448-key.pem"),
+                    "MaxProtocol" => "TLSv1.2" },
+        client => { },
+        test   => { "ExpectedResult" => "Success" },
+    },
+);
+
+push @tests, @tests_ec unless disabled("ec");
+push @tests, @tests_tls1_2 unless disabled("tls1_2") || disabled("ec");

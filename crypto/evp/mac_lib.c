@@ -1,7 +1,7 @@
 /*
  * Copyright 2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -48,18 +48,28 @@ void EVP_MAC_CTX_free(EVP_MAC_CTX *ctx)
     OPENSSL_free(ctx);
 }
 
-int EVP_MAC_CTX_copy(EVP_MAC_CTX *dst, EVP_MAC_CTX *src)
+EVP_MAC_CTX *EVP_MAC_CTX_dup(const EVP_MAC_CTX *src)
 {
-    EVP_MAC_IMPL *macdata;
+    EVP_MAC_CTX *dst;
 
-    if (src->data != NULL && !dst->meth->copy(dst->data, src->data))
-        return 0;
+    if (src->data == NULL)
+        return NULL;
 
-    macdata = dst->data;
+    dst = OPENSSL_malloc(sizeof(*dst));
+    if (dst == NULL) {
+        EVPerr(EVP_F_EVP_MAC_CTX_DUP, ERR_R_MALLOC_FAILURE);
+        return NULL;
+    }
+
     *dst = *src;
-    dst->data = macdata;
 
-    return 1;
+    dst->data = src->meth->dup(src->data);
+    if (dst->data == NULL) {
+        EVP_MAC_CTX_free(dst);
+        return NULL;
+    }
+
+    return dst;
 }
 
 const EVP_MAC *EVP_MAC_CTX_mac(EVP_MAC_CTX *ctx)
@@ -82,6 +92,8 @@ int EVP_MAC_init(EVP_MAC_CTX *ctx)
 
 int EVP_MAC_update(EVP_MAC_CTX *ctx, const unsigned char *data, size_t datalen)
 {
+    if (datalen == 0)
+        return 1;
     return ctx->meth->update(ctx->data, data, datalen);
 }
 

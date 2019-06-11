@@ -1,7 +1,7 @@
 /*
  * Copyright 2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -39,11 +39,23 @@ static EVP_MAC_IMPL *gmac_new(void)
     return gctx;
 }
 
-static int gmac_copy(EVP_MAC_IMPL *gdst, EVP_MAC_IMPL *gsrc)
+static EVP_MAC_IMPL *gmac_dup(const EVP_MAC_IMPL *gsrc)
 {
+    EVP_MAC_IMPL *gdst;
+
+    gdst = gmac_new();
+    if (gdst == NULL)
+        return NULL;
+
+    if (!EVP_CIPHER_CTX_copy(gdst->ctx, gsrc->ctx)) {
+        gmac_free(gdst);
+        return NULL;
+    }
+
     gdst->cipher = gsrc->cipher;
     gdst->engine = gsrc->engine;
-    return EVP_CIPHER_CTX_copy(gdst->ctx, gsrc->ctx);
+
+    return gdst;
 }
 
 static size_t gmac_size(EVP_MAC_IMPL *gctx)
@@ -172,7 +184,7 @@ static int gmac_ctrl_str(EVP_MAC_IMPL *gctx, const char *type,
 const EVP_MAC gmac_meth = {
     EVP_MAC_GMAC,
     gmac_new,
-    gmac_copy,
+    gmac_dup,
     gmac_free,
     gmac_size,
     gmac_init,

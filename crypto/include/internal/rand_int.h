@@ -1,14 +1,14 @@
 /*
  * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
 
 /*
- * Licensed under the OpenSSL licenses, (the "License");
+ * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  * https://www.openssl.org/source/license.html
@@ -24,7 +24,6 @@
 typedef struct rand_pool_st RAND_POOL;
 
 void rand_cleanup_int(void);
-void rand_drbg_cleanup_int(void);
 void drbg_delete_thread_state(void);
 void rand_fork(void);
 
@@ -48,6 +47,14 @@ void rand_drbg_cleanup_nonce(RAND_DRBG *drbg,
 size_t rand_drbg_get_additional_data(RAND_POOL *pool, unsigned char **pout);
 
 void rand_drbg_cleanup_additional_data(RAND_POOL *pool, unsigned char *out);
+
+/* CRNG test entropy filter callbacks. */
+size_t rand_crngt_get_entropy(RAND_DRBG *drbg,
+                              unsigned char **pout,
+                              int entropy, size_t min_len, size_t max_len,
+                              int prediction_resistance);
+void rand_crngt_cleanup_entropy(RAND_DRBG *drbg,
+                                unsigned char *out, size_t outlen);
 
 /*
  * RAND_POOL functions

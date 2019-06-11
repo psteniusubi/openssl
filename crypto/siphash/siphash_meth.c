@@ -1,7 +1,7 @@
 /*
  * Copyright 2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -31,10 +31,17 @@ static void siphash_free(EVP_MAC_IMPL *sctx)
     OPENSSL_free(sctx);
 }
 
-static int siphash_copy(EVP_MAC_IMPL *sdst, EVP_MAC_IMPL *ssrc)
+static EVP_MAC_IMPL *siphash_dup(const EVP_MAC_IMPL *ssrc)
 {
+    EVP_MAC_IMPL *sdst;
+
+    sdst = siphash_new();
+    if (sdst == NULL)
+        return NULL;
+
     *sdst = *ssrc;
-    return 1;
+
+    return sdst;
 }
 
 static size_t siphash_size(EVP_MAC_IMPL *sctx)
@@ -128,7 +135,7 @@ static int siphash_ctrl_str(EVP_MAC_IMPL *ctx,
 const EVP_MAC siphash_meth = {
     EVP_MAC_SIPHASH,
     siphash_new,
-    siphash_copy,
+    siphash_dup,
     siphash_free,
     siphash_size,
     siphash_init,

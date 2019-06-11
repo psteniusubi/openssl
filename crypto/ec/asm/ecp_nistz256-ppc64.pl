@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
 # Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
 #
-# Licensed under the OpenSSL license (the "License").  You may not use
+# Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
 # in the file LICENSE in the source distribution or at
 # https://www.openssl.org/source/license.html
@@ -1919,7 +1919,7 @@ $code.=<<___;
 
 ################################################################################
 # void ecp_nistz256_ord_sqr_mont(uint64_t res[4], uint64_t a[4],
-#                                int rep);
+#                                uint64_t rep);
 .globl	ecp_nistz256_ord_sqr_mont
 .align	5
 ecp_nistz256_ord_sqr_mont:

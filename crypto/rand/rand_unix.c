@@ -1,7 +1,7 @@
 /*
  * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
- * Licensed under the OpenSSL license (the "License").  You may not use
+ * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include "internal/dso.h"
 #if defined(__linux)
-# include <sys/syscall.h>
+# include <asm/unistd.h>
 #endif
 #if defined(__FreeBSD__)
 # include <sys/types.h>
@@ -30,7 +30,8 @@
 # include <sys/param.h>
 #endif
 
-#if defined(OPENSSL_SYS_UNIX) || defined(__DJGPP__)
+#if (defined(OPENSSL_SYS_UNIX) && !defined(OPENSSL_SYS_VXWORKS)) \
+     || defined(__DJGPP__)
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <fcntl.h>
@@ -88,9 +89,8 @@ static uint64_t get_timer_bits(void);
 # undef OPENSSL_RAND_SEED_EGD
 #endif
 
-#if (defined(OPENSSL_SYS_VXWORKS) || defined(OPENSSL_SYS_UEFI)) && \
-        !defined(OPENSSL_RAND_SEED_NONE)
-# error "UEFI and VXWorks only support seeding NONE"
+#if defined(OPENSSL_SYS_UEFI) && !defined(OPENSSL_RAND_SEED_NONE)
+# error "UEFI only supports seeding NONE"
 #endif
 
 #if !(defined(OPENSSL_SYS_WINDOWS) || defined(OPENSSL_SYS_WIN32) \
@@ -303,8 +303,8 @@ static ssize_t syscall_random(void *buf, size_t buflen)
 #  endif
 
     /* Linux supports this since version 3.17 */
-#  if defined(__linux) && defined(SYS_getrandom)
-    return syscall(SYS_getrandom, buf, buflen, 0);
+#  if defined(__linux) && defined(__NR_getrandom)
+    return syscall(__NR_getrandom, buf, buflen, 0);
 #  elif (defined(__FreeBSD__) || defined(__NetBSD__)) && defined(KERN_ARND)
     return sysctl_random(buf, buflen);
 #  else
@@ -564,14 +564,18 @@ size_t rand_pool_acquire_entropy(RAND_POOL *pool)
 # endif
 #endif
 
-#if defined(OPENSSL_SYS_UNIX) || defined(__DJGPP__)
+#if (defined(OPENSSL_SYS_UNIX) && !defined(OPENSSL_SYS_VXWORKS)) \
+     || defined(__DJGPP__)
 int rand_pool_add_nonce_data(RAND_POOL *pool)
 {
     struct {
         pid_t pid;
         CRYPTO_THREAD_ID tid;
         uint64_t time;
-    } data = { 0 };
+    } data;
+
+    /* Erase the entire structure including any padding */
+    memset(&data, 0, sizeof(data));
 
     /*
      * Add process id, thread id, and a high resolution timestamp to
@@ -590,7 +594,10 @@ int rand_pool_add_additional_data(RAND_POOL *pool)
     struct {
         CRYPTO_THREAD_ID tid;
         uint64_t time;
-    } data = { 0 };
+    } data;
+
+    /* Erase the entire structure including any padding */
+    memset(&data, 0, sizeof(data));
 
     /*
      * Add some noise from the thread id and a high resolution timer.
